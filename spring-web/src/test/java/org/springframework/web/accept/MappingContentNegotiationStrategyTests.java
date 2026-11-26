@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.http.MediaType;
 import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.testfixture.servlet.MockHttpServletRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -75,6 +77,81 @@ class MappingContentNegotiationStrategyTests {
 
 		assertThat(mediaTypes).hasSize(1);
 		assertThat(mediaTypes.get(0).toString()).isEqualTo("application/xml");
+	}
+
+	@Test
+	void resolveMediaTypesHandleNoMatchAddsMappingForPlainExtension() throws Exception {
+		Map<String, MediaType> mapping = Collections.singletonMap("json", MediaType.APPLICATION_JSON);
+		TestMappingContentNegotiationStrategy strategy = new TestMappingContentNegotiationStrategy("xml", mapping);
+
+		assertThat(strategy.resolveMediaTypes(null)).containsExactly(MediaType.APPLICATION_XML);
+		assertThat(strategy.getMediaTypes()).containsOnlyKeys("json", "xml");
+		assertThat(strategy.getAllFileExtensions()).containsExactlyInAnyOrder("json", "xml");
+		assertThat(strategy.resolveFileExtensions(MediaType.APPLICATION_XML)).containsExactly("xml");
+	}
+
+	@Test
+	void resolveMediaTypesViaFactoryDoesNotAddMappingForKeyWithDot() throws Exception {
+		Map<String, MediaType> mapping = Collections.singletonMap("json", MediaType.APPLICATION_JSON);
+		ParameterContentNegotiationStrategy strategy = new ParameterContentNegotiationStrategy(mapping);
+		strategy.setUseRegisteredExtensionsOnly(false);
+
+		for (int i = 0; i < 100; i++) {
+			assertThat(strategy.resolveMediaTypes(createRequest("custom" + i + ".xml")))
+					.containsExactly(MediaType.APPLICATION_XML);
+		}
+		assertThat(strategy.resolveMediaTypes(createRequest("not.json")))
+				.containsExactly(MediaType.APPLICATION_JSON);
+
+		assertThat(strategy.getMediaTypes()).containsOnlyKeys("json");
+		assertThat(strategy.getAllFileExtensions()).containsExactly("json");
+		assertThat(strategy.resolveFileExtensions(MediaType.APPLICATION_XML)).isEmpty();
+		assertThat(strategy.resolveFileExtensions(MediaType.APPLICATION_JSON)).containsExactly("json");
+	}
+
+	@Test
+	void resolveMediaTypesViaFactoryAddsSingleMappingForCaseVariants() throws Exception {
+		Map<String, MediaType> mapping = Collections.singletonMap("json", MediaType.APPLICATION_JSON);
+		ParameterContentNegotiationStrategy strategy = new ParameterContentNegotiationStrategy(mapping);
+		strategy.setUseRegisteredExtensionsOnly(false);
+
+		for (String key : new String[] {"XML", "Xml", "xMl", "xmL", "XmL", "xml"}) {
+			assertThat(strategy.resolveMediaTypes(createRequest(key))).containsExactly(MediaType.APPLICATION_XML);
+		}
+
+		assertThat(strategy.getMediaTypes()).containsOnlyKeys("json", "xml");
+		assertThat(strategy.getAllFileExtensions()).containsExactlyInAnyOrder("json", "xml");
+		assertThat(strategy.resolveFileExtensions(MediaType.APPLICATION_XML)).containsExactly("xml");
+	}
+
+	@Test
+	void resolveMediaTypesHandleNoMatchDoesNotAddMappingForNonExtensionKey() throws Exception {
+		Map<String, MediaType> mapping = Collections.singletonMap("json", MediaType.APPLICATION_JSON);
+		String[] keys = {"a.xml", "a/xml", "a\\xml", "../xml", "xml."};
+
+		for (String key : keys) {
+			AbstractMappingContentNegotiationStrategy strategy = new AbstractMappingContentNegotiationStrategy(mapping) {
+				@Override
+				protected String getMediaTypeKey(NativeWebRequest request) {
+					return key;
+				}
+				@Override
+				protected MediaType handleNoMatch(NativeWebRequest request, String mappingKey) {
+					return MediaType.APPLICATION_XML;
+				}
+			};
+
+			assertThat(strategy.resolveMediaTypes(null)).containsExactly(MediaType.APPLICATION_XML);
+			assertThat(strategy.getMediaTypes()).as(key).containsOnlyKeys("json");
+			assertThat(strategy.getAllFileExtensions()).as(key).containsExactly("json");
+			assertThat(strategy.resolveFileExtensions(MediaType.APPLICATION_XML)).as(key).isEmpty();
+		}
+	}
+
+	private static NativeWebRequest createRequest(String format) {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.addParameter("format", format);
+		return new ServletWebRequest(request);
 	}
 
 

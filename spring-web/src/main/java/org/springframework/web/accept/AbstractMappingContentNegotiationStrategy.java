@@ -18,6 +18,7 @@ package org.springframework.web.accept;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -43,8 +44,10 @@ import org.springframework.web.context.request.NativeWebRequest;
  * <p>The method {@link #handleNoMatch} allow subclasses to plug in additional
  * ways of looking up media types (e.g. through the Java Activation framework,
  * or {@link jakarta.servlet.ServletContext#getMimeType}). Media types resolved
- * via base classes are then added to the base class
+ * this way for a plain file extension key (i.e. one without '.', '/' or '\')
+ * are then added, under the lower-case form of the key, to the base class
  * {@link MappingMediaTypeFileExtensionResolver}, i.e. cached for new lookups.
+ * Media types resolved for any other key are not added to the base class.
  *
  * @author Rossen Stoyanchev
  * @since 3.2
@@ -118,11 +121,22 @@ public abstract class AbstractMappingContentNegotiationStrategy extends MappingM
 			}
 			mediaType = handleNoMatch(webRequest, key);
 			if (mediaType != null) {
-				addMapping(key, mediaType);
+				if (isPlainFileExtension(key)) {
+					addMapping(key.toLowerCase(Locale.ROOT), mediaType);
+				}
 				return Collections.singletonList(mediaType);
 			}
 		}
 		return MEDIA_TYPE_ALL_LIST;
+	}
+
+	/**
+	 * Whether the given key is a plain file extension that is safe to add to
+	 * the registered mappings, as opposed to an arbitrary client-provided value
+	 * (for example, "foo.json") that would grow the mappings without bounds.
+	 */
+	private static boolean isPlainFileExtension(String key) {
+		return (key.indexOf('.') == -1 && key.indexOf('/') == -1 && key.indexOf('\\') == -1);
 	}
 
 
@@ -144,7 +158,10 @@ public abstract class AbstractMappingContentNegotiationStrategy extends MappingM
 	 * Override to provide handling when a key is not resolved via.
 	 * {@link #lookupMediaType}. Subclasses can take further steps to
 	 * determine the media type(s). If a MediaType is returned from
-	 * this method it will be added to the cache in the base class.
+	 * this method for a plain file extension key (without '.', '/' or '\'),
+	 * it will be added to the cache in the base class under the lower-case
+	 * form of the key. A MediaType returned for any other key is not added
+	 * to the registered mappings in the base class.
 	 */
 	@Nullable
 	protected MediaType handleNoMatch(NativeWebRequest request, String key)
