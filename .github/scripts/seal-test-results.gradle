@@ -1,0 +1,34 @@
+// Added for the sealed build: print per-task test totals, record skipped tests
+// (for .github/scripts/seal_test_report.py), always execute Test tasks (never
+// restore them FROM-CACHE), and switch off the lint/format gates (checkstyle*,
+// nohttp via checkstyleNohttp, spring-javaformat checkFormat*), which never run
+// the code under test.
+allprojects {
+  tasks.withType(Test).configureEach { t ->
+    t.outputs.cacheIf { false }
+    t.outputs.upToDateWhen { false }
+    t.testLogging {
+      events 'failed'
+      exceptionFormat 'full'
+    }
+    def sealSkipFile = new File(t.project.rootDir, "build/seal-skipped/${t.path.replace(':', '_')}.tsv")
+    t.doFirst { sealSkipFile.delete() }
+    t.afterTest { desc, result ->
+      if (result.resultType.name() == 'SKIPPED') {
+        sealSkipFile.parentFile.mkdirs()
+        def msg = (result.exception?.message ?: '').replaceAll('[\\t\\r\\n]+', ' ')
+        sealSkipFile << "${t.path}\t${desc.className}\t${desc.name}\t${msg}\t${desc.parent?.name ?: ''}\n"
+      }
+    }
+    t.afterSuite { desc, result ->
+      if (desc.parent == null) {
+        println "TEST SUMMARY ${t.path}: tests=${result.testCount} passed=${result.successfulTestCount} failed=${result.failedTestCount} skipped=${result.skippedTestCount} result=${result.resultType}"
+      }
+    }
+  }
+  tasks.configureEach { g ->
+    if (g.name.startsWith('checkstyle') || g.name.startsWith('checkFormat')) {
+      g.enabled = false
+    }
+  }
+}
