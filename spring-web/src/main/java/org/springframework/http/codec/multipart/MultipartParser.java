@@ -397,12 +397,18 @@ final class MultipartParser extends BaseSubscriber<DataBuffer> {
 
 					changeState(this, new BodyState(), buf);
 				}
+				else {
+					changeState(this, DisposedState.INSTANCE, buf);
+				}
 			}
 			else {
 				long count = this.byteCount.addAndGet(buf.readableByteCount());
 				if (belowMaxHeaderSize(count)) {
 					this.buffers.add(buf);
 					requestBuffer();
+				}
+				else {
+					changeState(this, DisposedState.INSTANCE, buf);
 				}
 			}
 		}
@@ -557,6 +563,7 @@ final class MultipartParser extends BaseSubscriber<DataBuffer> {
 				}
 				else /* if (len == 0) */ {
 					// buffer starts with complete delimiter, flush out the previous buffers
+					DataBufferUtils.release(boundaryBuffer);
 					flush();
 				}
 
